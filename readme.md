@@ -26,6 +26,7 @@ The current implementation is backed by NSQ. However, it should be extremely sim
 
 ### To do
 
+* Be a polite web citizen and follow robots.txt!
 * Intelligent throughput. Right now, each worker can only crawl a maximum of two URL's a second.
 * Distributed deduping of URLs. I only check in a local in memory cache to verify if we have visited this page before. An interface is provided, which could easily be swapped out for Memcached, Redis and the like.
 * Cleaning up of the HTML body. It is dumped raw into C* currently. Cleaning it up, removing tags, etc would save time on analysis further down the line.
