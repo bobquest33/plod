@@ -19,6 +19,11 @@ The current implementation is backed by NSQ. However, it should be extremely sim
     go build
     plod
 
+### Options
+
+    -start="https://www.github.com": The starting URL
+    -workers=10: Number of workers to spawn
+
 ### To do's
 
 * Distributed deduping of URLs. I only check in a local in memory cache to verify if we have visited this page before. An interface is provided, which could easily be swapped out for Memcached, Redis and the like.
