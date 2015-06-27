@@ -12,6 +12,7 @@ var (
 	t        gocassa.MultimapTable
 )
 
+// Initialise the keyspace in C*, and create the table
 func Init() error {
 	var err error
 	hosts := []string{"127.0.0.1"}
@@ -36,6 +37,7 @@ func Init() error {
 	return nil
 }
 
+// Store the CrawlRecord in Cassandra.
 func Store(cr *CrawlRecord) error {
 	return t.Set(cr).Run()
 }

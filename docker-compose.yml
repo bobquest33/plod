@@ -1,0 +1,10 @@
+cassandra:
+    image: poklet/cassandra
+    ports:
+        - "9042:9042"
+
+nsq:
+    image: nsqio/nsqd
+    ports:
+        - "4150:4150"
+        - "4151:4151"

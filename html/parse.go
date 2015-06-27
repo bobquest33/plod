@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/html"
 )
 
-func Parse(httpBody io.Reader) []domain.URL {
+func ParseLinks(httpBody io.Reader) []domain.URL {
 	links := make([]domain.URL, 0)
 	page := html.NewTokenizer(httpBody)
 	for {
