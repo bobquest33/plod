@@ -8,6 +8,10 @@ import (
 	"golang.org/x/net/html"
 )
 
+// Code from github.com/jackdanger/collectlinks
+// Copyright Jack Danger Canty
+// Pulled into own repo to change function signatures
+
 func ParseLinks(httpBody io.Reader) []domain.URL {
 	links := make([]domain.URL, 0)
 	page := html.NewTokenizer(httpBody)

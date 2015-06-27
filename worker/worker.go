@@ -24,9 +24,10 @@ var (
 type Worker struct {
 	ID       string
 	WorkChan chan domain.URLPair
+	quitch   chan bool
 }
 
-func Spawn(q chan domain.URLPair) {
+func Spawn(q chan domain.URLPair, quitch chan bool) {
 	// Set up HTTP transport for TLS connection, one time only
 	once.Do(func() {
 		tlsConfig = &tls.Config{
@@ -44,16 +45,24 @@ func Spawn(q chan domain.URLPair) {
 	w := Worker{
 		ID:       id.String()[:5], // We don't need the whole ID as we're not running that many workers..
 		WorkChan: q,
+		quitch:   quitch,
 	}
 	go w.work()
 }
 
 func (w Worker) work() {
+	ticker := time.NewTicker(500 * time.Millisecond)
 	for {
-		url := <-w.WorkChan
-		err := w.crawl(url)
-		if err != nil {
-			log.Errorf("[worker-%v] Error crawling %v: %v", w.ID, url, err)
+		select {
+		case url := <-w.WorkChan:
+			err := w.crawl(url)
+			if err != nil {
+				log.Errorf("[worker-%v] Error crawling %v: %v", w.ID, url, err)
+			}
+			<-ticker.C
+		case <-w.quitch:
+			log.Tracef("[worker-%v] Requested to quit, stopping work", w.ID)
+			return
 		}
 	}
 }
