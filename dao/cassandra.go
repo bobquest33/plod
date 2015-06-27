@@ -1,7 +1,6 @@
 package dao
 
 import (
-	log "github.com/cihub/seelog"
 	"github.com/hailocab/gocassa"
 	"github.com/unravelin/arx/errors"
 )
@@ -15,7 +14,7 @@ var (
 // Initialise the keyspace in C*, and create the table
 func Init() error {
 	var err error
-	hosts := []string{"127.0.0.1"}
+	hosts := []string{"192.168.59.103:9042"}
 	conn, err := gocassa.Connect(hosts, "", "")
 	if err != nil {
 		panic(err)
@@ -24,7 +23,7 @@ func Init() error {
 	// Init the keyspace
 	err = conn.CreateKeySpace(Keyspace)
 	if err != nil && !errors.CheckErr("Cannot add existing keyspace", err) {
-		log.Critical(err)
+		panic(err)
 	}
 
 	// KS variable used globally

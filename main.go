@@ -4,17 +4,17 @@ import (
 	"flag"
 	"os"
 	"os/signal"
-	"time"
 
+	"github.com/bitly/go-nsq"
 	log "github.com/cihub/seelog"
 	"github.com/sjwhitworth/plod/dao"
-	"github.com/sjwhitworth/plod/domain"
 	"github.com/sjwhitworth/plod/worker"
 )
 
 var (
-	workers     = flag.Int("workers", 10, "Number of workers to spawn")
+	handlers    = flag.Int("handlers", 10, "Number of concurrenct handlers")
 	startDomain = flag.String("start", "https://www.github.com", "The starting URL")
+	concurrency = flag.Int("concurrency", 5, "The theoretical maximum number of URLs we can crawl at a given time")
 )
 
 func main() {
@@ -26,16 +26,25 @@ func main() {
 		panic(err)
 	}
 
-	quitCh := make(chan bool)
-	q := make(chan domain.URLPair, 1000)
+	log.Tracef("[Main] Running with %v handlers", *handlers)
 
-	log.Tracef("[Main] Spawning %v workers", *workers)
-	for i := 0; i < *workers; i++ {
-		worker.Spawn(q, quitCh)
+	cfg := nsq.NewConfig()
+	consumer, err := nsq.NewConsumer("urls", "plod", cfg)
+	if err != nil {
+		panic(err)
 	}
 
-	q <- domain.URLPair{domain.URL("START"), domain.URL(*startDomain)}
-	log.Tracef("[Main] Entering crawling loop")
+	w := worker.Worker{}
+	consumer.ChangeMaxInFlight(*concurrency)
+	consumer.AddConcurrentHandlers(w, *handlers)
+
+	log.Tracef("[Main] Firing up NSQ")
+
+	if err := consumer.ConnectToNSQD("192.168.59.103:4150"); err != nil {
+		panic(err)
+	}
+
+	worker.Initialise(*startDomain)
 
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt)
@@ -44,15 +53,7 @@ func main() {
 	for {
 		select {
 		case <-c:
-			log.Infof("[Main] Caught exit signal, signalling for workers to finish up cleanly")
-			for i := 0; i < *workers; i++ {
-				// No buffered channel - block to make sure all workers receive
-				go func() { quitCh <- true }()
-			}
-
-			// Give a few seconds and then exit hard
-			time.Sleep(5 * time.Second)
-			log.Infof("[Main] Shutting down")
+			log.Infof("[Main] Caught exit signal, bye!")
 			return
 		}
 	}

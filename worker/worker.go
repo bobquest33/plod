@@ -2,13 +2,15 @@ package worker
 
 import (
 	"crypto/tls"
+	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/bitly/go-nsq"
+
 	log "github.com/cihub/seelog"
-	"github.com/nu7hatch/gouuid"
 	"github.com/sjwhitworth/plod/dao"
 	"github.com/sjwhitworth/plod/domain"
 	"github.com/sjwhitworth/plod/html"
@@ -19,16 +21,15 @@ var (
 	client    http.Client
 	transport *http.Transport
 	tlsConfig *tls.Config
+
+	producer *nsq.Producer
 )
 
-type Worker struct {
-	ID       string
-	WorkChan chan domain.URLPair
-	quitch   chan bool
-}
+const (
+	NSQTopic = "urls"
+)
 
-func Spawn(q chan domain.URLPair, quitch chan bool) {
-	// Set up HTTP transport for TLS connection, one time only
+func init() {
 	once.Do(func() {
 		tlsConfig = &tls.Config{
 			InsecureSkipVerify: true,
@@ -39,36 +40,30 @@ func Spawn(q chan domain.URLPair, quitch chan bool) {
 		}
 
 		client = http.Client{Transport: transport}
-	})
 
-	id, _ := uuid.NewV4()
-	w := Worker{
-		ID:       id.String()[:5], // We don't need the whole ID as we're not running that many workers..
-		WorkChan: q,
-		quitch:   quitch,
-	}
-	go w.work()
+		var err error
+		cfg := nsq.NewConfig()
+		producer, err = nsq.NewProducer("192.168.59.103:4150", cfg)
+		if err != nil {
+			panic(err)
+		}
+	})
 }
 
-func (w Worker) work() {
-	ticker := time.NewTicker(500 * time.Millisecond)
-	for {
-		select {
-		case url := <-w.WorkChan:
-			err := w.crawl(url)
-			if err != nil {
-				log.Errorf("[worker-%v] Error crawling %v: %v", w.ID, url, err)
-			}
-			<-ticker.C
-		case <-w.quitch:
-			log.Tracef("[worker-%v] Requested to quit, stopping work", w.ID)
-			return
-		}
+type Worker struct{}
+
+func (w Worker) HandleMessage(msg *nsq.Message) error {
+	var urls domain.URLPair
+	body := msg.Body
+	if err := json.Unmarshal(body, &urls); err != nil {
+		return err
 	}
+
+	return w.crawl(urls)
 }
 
 func (w Worker) crawl(urls domain.URLPair) error {
-	log.Tracef("[worker-%v] Visiting %v from %v", w.ID, urls.CurrentURL, urls.OriginURL)
+	log.Tracef("Visiting %v from %v", urls.CurrentURL, urls.OriginURL)
 	dao.DefaultCache.Set(string(urls.CurrentURL))
 
 	resp, err := client.Get(string(urls.CurrentURL))
@@ -82,7 +77,6 @@ func (w Worker) crawl(urls domain.URLPair) error {
 		return err
 	}
 
-	count := 0
 	for _, link := range hyperlinks {
 		uri := html.FixURL(string(link), string(urls.CurrentURL))
 
@@ -93,18 +87,21 @@ func (w Worker) crawl(urls domain.URLPair) error {
 
 		visited := dao.DefaultCache.HaveVisited(uri)
 		if !visited {
-			// Insert in a non blocking fashion.
-			go func() {
-				w.WorkChan <- domain.URLPair{
-					OriginURL:  urls.CurrentURL,
-					CurrentURL: domain.URL(uri),
-				}
-				count++
-			}()
+			d := domain.URLPair{
+				OriginURL:  urls.CurrentURL,
+				CurrentURL: uri,
+			}
+
+			dat, err := json.Marshal(&d)
+			if err != nil {
+				return err
+			}
+
+			if err := producer.Publish("urls", dat); err != nil {
+				return err
+			}
 		}
 	}
-
-	log.Tracef("[worker-%v] Found %v links from %v, %v in queue", w.ID, count, urls.CurrentURL, len(w.WorkChan))
 
 	// Store information in C* about the crawl
 	return dao.Store(&dao.CrawlRecord{
@@ -113,4 +110,18 @@ func (w Worker) crawl(urls domain.URLPair) error {
 		Timestamp:   time.Now(),
 		Body:        string(body),
 	})
+}
+
+// Sends the first URL to kick things off!
+func Initialise(url string) {
+	d := domain.URLPair{"START", url}
+	dat, err := json.Marshal(d)
+	if err != nil {
+		panic(err)
+	}
+
+	if err := producer.Publish(NSQTopic, dat); err != nil {
+		panic(err)
+	}
+
 }

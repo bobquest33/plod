@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/sjwhitworth/plod/domain"
 	"golang.org/x/net/html"
 )
 
@@ -12,8 +11,8 @@ import (
 // Copyright Jack Danger Canty
 // Pulled into own repo to change function signatures
 
-func ParseLinks(httpBody io.Reader) []domain.URL {
-	links := make([]domain.URL, 0)
+func ParseLinks(httpBody io.Reader) []string {
+	links := make([]string, 0)
 	page := html.NewTokenizer(httpBody)
 	for {
 		tokenType := page.Next()
@@ -24,7 +23,7 @@ func ParseLinks(httpBody io.Reader) []domain.URL {
 		if tokenType == html.StartTagToken && token.DataAtom.String() == "a" {
 			for _, attr := range token.Attr {
 				if attr.Key == "href" {
-					links = append(links, domain.URL(attr.Val))
+					links = append(links, attr.Val)
 				}
 			}
 		}
